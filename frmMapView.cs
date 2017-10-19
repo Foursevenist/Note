@@ -1556,6 +1556,20 @@ namespace LandCheck
             return Ycoord;
         }
 
+        private void AddField(IFeatureClass pFeatureClass, string name, string aliasName, esriFieldType FieldType)
+        {
+            //若存在，则不需添加
+            if (pFeatureClass.Fields.FindField(name) > -1) return;
+            IField pField = new FieldClass();
+            IFieldEdit pFieldEdit = pField as IFieldEdit;
+            pFieldEdit.AliasName_2 = aliasName;
+            pFieldEdit.Name_2 = name;
+            pFieldEdit.Type_2 = FieldType;
+
+            IClass pClass = pFeatureClass as IClass;
+            pClass.AddField(pField);
+        }
+
         //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
         #endregion
 
@@ -1574,9 +1588,9 @@ namespace LandCheck
             List<double> lineYmax = new List<double>();
             List<double> lineYmin = new List<double>();
             int linecount=0;
-            
-            
-            if (this.m_bSplit && Globle.CGlobalVarable.m_strCurrentFeatureLayerName != "")
+
+            if (this.m_bSplit)
+            //---if (this.m_bSplit && Globle.CGlobalVarable.m_strCurrentFeatureLayerName != "")
             {
                 //设置当前工具和鼠标样式
                 this.m_axMapControl.CurrentTool = null; 
@@ -1584,78 +1598,83 @@ namespace LandCheck
                
                 // 设置多边形划分为false
                 // 显示分割目标（面积）
-                this.m_pFrmMain.ShowTextInConsole(String.Format("分割目标：{0}和{1}\r\n", Globle.CGlobalVarable.g_dSplittedPlogyonAreaFirst,Globle.CGlobalVarable.g_dSplittedPlogyonAreaSecond)); // 输出控制台显示
+                //this.m_pFrmMain.ShowTextInConsole(String.Format("分割目标：{0}和{1}\r\n", Globle.CGlobalVarable.g_dSplittedPlogyonAreaFirst,Globle.CGlobalVarable.g_dSplittedPlogyonAreaSecond)); // 输出控制台显示
 
              
-                this.m_bSplit = false;
+                //--this.m_bSplit = false;
+                //--ILayer m_CurrentLayer = CMapFunction.GetFeatureLayerWithName(Globle.CGlobalVarable.m_strCurrentFeatureLayerName, this.m_axMapControl.Map);
+                //--IFeatureCursor featureCursor = GetSelectedFeatures(m_CurrentLayer);
+                //--IFeature feature = featureCursor.NextFeature();
 
-                // 得到图层
-                ILayer m_CurrentLayer = CMapFunction.GetFeatureLayerWithName(Globle.CGlobalVarable.m_strCurrentFeatureLayerName, this.m_axMapControl.Map);
+                ILayer lyr = m_axMapControl.Map.get_Layer(0);
+                IFeatureLayer featurelyr = (IGeoFeatureLayer)lyr;
 
-                //得到游標
-                IFeatureCursor featureCursor = GetSelectedFeatures(m_CurrentLayer);
+              
 
-                //得到下一要素
-                IFeature feature = featureCursor.NextFeature();
+                IQueryFilter ppQueryFilter = new QueryFilterClass();
+                IFeatureCursor pFeatureCursor = null;
+
+                ppQueryFilter.SubFields = "FID";
+                pFeatureCursor = featurelyr.FeatureClass.Search(ppQueryFilter, true);
+
+                IDataStatistics pDataStati = new DataStatisticsClass();
+                pDataStati.Field = "FID";
+                pDataStati.Cursor = (ICursor)pFeatureCursor;
+                
+                IFeatureClass fcls = featurelyr.FeatureClass;
+                AddField(fcls, "featureID", "fid", esriFieldType.esriFieldTypeInteger);
+
+                IEnumerator pEnumerator = pDataStati.UniqueValues;
+                pEnumerator.Reset();
+                ArrayList featureFID = new ArrayList();
+                int fid = 0;
+                while (pEnumerator.MoveNext())
+                {
+                    object pObj = pEnumerator.Current;
+
+                    if (fid == int.Parse(pObj.ToString()))
+                    {
+                        IFeature pFeature = fcls.GetFeature(fid);
+                        pFeature.set_Value(pFeature.Fields.FindField("featureID"), fid);   //每个要素的“A”字段存储的都是“B”。
+                        pFeature.Store();
+                    }
+
+
+
+                   
+                    fid++;
+                    Console.WriteLine("fid" + fid);
+
+                }
+
+                
+                string sql = null;
+               
+                sql = "featureID = " + 0;
+                IQueryFilter pQueryFilter = new QueryFilterClass();
+             
+                pQueryFilter.WhereClause = sql;
+                pFeatureCursor = fcls.Search(pQueryFilter, true);
+                IFeature feature = pFeatureCursor.NextFeature();
+                
+
+
+
 
                 if (feature == null)
                 {
                     MessageBox.Show("选中对象不存在，无法执行分割","提示");
                     return;
                 }
-
-                IEnvelope pEnvelope = feature.Extent;//(为了放大)
+                else m_axMapControl.FlashShape(feature.Shape);
                
-
-              
-                //IFeatureSelection pFeatSel = (IFeatureSelection)m_CurrentLayer;
-
-                //ISelectionSet pSelectionSet = pFeatSel.SelectionSet as ISelectionSet;
 
                 IGeometry Line = DrawPolyline(this.m_axMapControl.ActiveView);
-                //==============================李思琦 改动start=======================================      
-                //获取蓝框坐标
-                IPoint p1 = new PointClass();
-                IPoint p2 = new PointClass();
-                IPoint p3 = new PointClass();
-                IPoint p4 = new PointClass();
-                if (pEnvelope != null && !pEnvelope.IsEmpty)
-                {
-                    //图形转为点集
-                    //IPointCollection pPointColl = pEnvelope as IPointCollection;
-
-                    //IRubberBand pRubberBand = new RubberEnvelopeClass();
-                   
-                    if (pEnvelope == null)
-                        return;
-                    
-                    p1 = pEnvelope.UpperLeft;
-                    p2 = pEnvelope.LowerLeft;
-                    p3 = pEnvelope.LowerRight;
-                    p4 = pEnvelope.UpperRight;
-                    IPointCollection bluePointCollection = new PolygonClass();
-                    object missing = Type.Missing; 
-                    bluePointCollection.AddPoint(p1, ref missing, ref missing);
-                    bluePointCollection.AddPoint(p2, ref missing, ref missing);
-                    bluePointCollection.AddPoint(p3, ref missing, ref missing);
-                    bluePointCollection.AddPoint(p4, ref missing, ref missing);
-                    //Console.WriteLine("蓝框左"+p1.X +"蓝框右"+ p4.X);
-                  
-                }
-               
-               //获取画好线（line）的坐标
-                IPolyline line = Line as IPolyline; 
-                IPolyline theline ;
-                //IPoint linePointMinY;
-                //IPoint linePointMaxY;
-                //IPoint linePointStart ;//起点
-                //IPoint linePointEnd ;//终点
-                //IPoint movedestination;
-                //MoveLineWithStartPoint(line, p1, line, linePointStart, linePointEnd);
-                //==============================================
+                IPolyline line = Line as IPolyline;
+                IPolyline theline;
                 IPointCollection linePointCollection = Line as IPointCollection;
                 int linePointCount = linePointCollection.PointCount;
-                Console.WriteLine("端点个数" + linePointCount);
+                //Console.WriteLine( "端点个数" + linePointCount);
                 IPoint linePointStart = linePointCollection.get_Point(0);//起点
                 IPoint linePointEnd = linePointCollection.get_Point(linePointCount - 1);//终点
                 IPoint linePointMinY = linePointStart;
@@ -1665,374 +1684,410 @@ namespace LandCheck
                     if (linePointMinY.Y > linePointCollection.get_Point(i).Y)
                         linePointMinY = linePointCollection.get_Point(i);
                 }
-                //============================================
-                //Console.WriteLine("原来端点" + linePointEnd.X);
-                //Console.WriteLine(linePointStart.X + "linePointStart" + linePointEnd.X);
-                //linePointMinY.Y = getMinYandMaxY(line,0);
-                //linePointMaxY.Y = getMinYandMaxY(line, 1);
-
-
-
-                IMoveLineFeedback m_MoveLineFeedback = new MoveLineFeedbackClass();
-                IPoint movedestination = linePointMinY;
-                m_MoveLineFeedback = new MoveLineFeedbackClass();
-                m_MoveLineFeedback.Start(line, linePointMinY);
-                //movedestination.X = p1.X;
-                //movedestination.Y = p1.Y + (linePointStart.Y - linePointMinY.Y) ;
-                movedestination.Y = p1.Y;
-                m_MoveLineFeedback.MoveTo(movedestination);
-                line = (IPolyline)m_MoveLineFeedback.Stop();
-                //DrawPolyline2(this.m_axMapControl.ActiveView, line as IGeometry); // 画出平行线
-                //Console.WriteLine(linePointStart.Y + "~~原来的Y~~~");
-                //Console.WriteLine(movedestination.Y + "~~~现在的Y~~");
-                //Console.WriteLine(linePointMinY.Y + "~~~最小的的Y~~");
-                //Console.WriteLine(p1.Y + "~~~p1的Y~~");
-
-
-
-                double startdifference = linePointStart.X - p1.X;
-                double enddifference = linePointEnd.X - p4.X;
-                //Console.WriteLine(startdifference + "---" + enddifference);
-
-                #region 裁剪与延长
-                theline = line;
-                
-                
-
-
-                IEnvelope cutEnvelope = pEnvelope; 
-                //cutEnvelope.PutCoords(pEnvelope.XMin, pEnvelope.YMin, pEnvelope.XMax, pEnvelope.YMax);
-                cutEnvelope.Expand(1, 5, true);
-                ITopologicalOperator pTopoOperator = theline  as ITopologicalOperator;
-                pTopoOperator.Clip(cutEnvelope);
-
-
-                if (startdifference > 0 && enddifference >= 0)
+                int spiltcount = 0;
+                #region 自动化循环
+                while (feature != null)
                 {
-                    theline = GetExtendLine(theline, startdifference, 0);
-                }
-                if (startdifference > 0&&enddifference < 0)//左短右短
-                {
-                    theline = GetExtendLine(line, startdifference, enddifference);
-                }
+                    spiltcount++;
+                    //featurecount++;
+                    Console.WriteLine("开始第" + spiltcount + "个要素切割");
+                    IEnvelope pEnvelope = feature.Extent;//(为了放大)
 
-                if (startdifference == 0 && enddifference < 0)//右短
-                {
-                    theline = GetExtendLine(theline, 0, enddifference);
-                }
-                if (startdifference < 0 && enddifference < 0)//左长右短
-                {
-                    theline = GetExtendLine(line, startdifference, enddifference);
-                }
-                #endregion
-
-                //获取裁剪、延长后线（theline）坐标
-                //IPointCollection thelinePointCollection = (IPointCollection)theline;
-                //=============================
-                IPointCollection thelinePointCollection = theline as IPointCollection;
-                int thelinePointCount = thelinePointCollection.PointCount;
-                IPoint thelinePointStart = thelinePointCollection.get_Point(0);//起点
-                IPoint thelinePointEnd = thelinePointCollection.get_Point(thelinePointCount - 1);//终点
-                //movedestination = thelinePointStart;
-                Console.WriteLine(thelinePointStart.X + "~~起点~~~" + p1.X);
-                Console.WriteLine(thelinePointEnd.X + "~~~终点~~" + p4.X);
-                Console.WriteLine("~~~" + p1.Y);
-                Console.WriteLine("~==~~" + p2.Y);
-
-
-                linePointMinY = thelinePointStart;
-                IPoint linePointMaxY = thelinePointStart;
-                //得到theline的最高点与最低点
-                for (int i = 0; i < thelinePointCount; i++)
-                {
-
-                    if (linePointMinY.Y > thelinePointCollection.get_Point(i).Y)
-                        linePointMinY = thelinePointCollection.get_Point(i);
-                    if (linePointMaxY.Y < thelinePointCollection.get_Point(i).Y)
-                        linePointMaxY = thelinePointCollection.get_Point(i);
-                }
-                //===================================
-                
-
-               
-                 
-                m_MoveLineFeedback.Start(theline, linePointMinY);
-                movedestination.X = linePointMinY.X;
-                //movedestination.Y = p1.Y - Globle.CGlobalVarable.g_dParallelLinesInterval;
-                movedestination.Y = p1.Y ;
-                
-                m_MoveLineFeedback.MoveTo(movedestination);
-                theline = (IPolyline)m_MoveLineFeedback.Stop();
-                DrawPolyline2(this.m_axMapControl.ActiveView, theline as IGeometry); // 画出平行线
-
-
-
-               
-             
-                //IConstructCurve mycurve = new PolylineClass();
-                
-                //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
-
-                //平行线的间隔 
-                double bufferDis =  Globle.CGlobalVarable.g_dParallelLinesInterval;
-                ArrayList theOffsetBaseList = new ArrayList(); // 保存历史偏移的数据
-                int index = 1;
-                double theOffsetBase = bufferDis;// 偏移绝对值
-                theOffsetBaseList.Add(theOffsetBase);// 保存每次的偏移绝对值
-                
-                //mycurve.ConstructOffset(theline, theOffsetBase);
-                //object o = System.Type.Missing;
-
-                //构造偏移点 https://wenku.baidu.com/view/25f170dc5022aaea998f0f44.html
-                //mycurve.ConstructOffset(theline, theOffsetBase, ref o, ref o);
-                
-                theOffsetBaseList.Add(bufferDis * index);// 保存历史偏移的数据
-                //DrawPolyline2(this.m_axMapControl.ActiveView, line as IGeometry);
-              
-                  
-                // 分割1次多边形
-                this.m_pFrmMain.ShowTextInConsole(String.Format("第{0}次切割\r\n",index)); // 输出控制台显示
-                double currentMinArea ;
-                //==============================李思琦 改动start=======================================   
-                IArea originArea = feature.Shape as IArea;
-
-                movedestination = thelinePointStart;
-                do
-                {
-                    currentMinArea = SplitOnce(feature, theline);
-                    // 切割前后最小面积的间隔（差）    
-                    Console.WriteLine("第" + index + "切割完成，间隔" + theOffsetBase + "\r\n本次面积" + currentMinArea);
-                    m_MoveLineFeedback.Start(theline, movedestination);
-                    //movedestination.X = thelinePointStart.X;
-                    movedestination.Y = movedestination.Y - theOffsetBase;
-                    m_MoveLineFeedback.MoveTo(movedestination);
-                    theline = (IPolyline)m_MoveLineFeedback.Stop();
-                    //将线的最小值与最大值存入数组
-                    //lineYmax.Add(getMinYandMaxY(theline, 1));
-                    //lineYmin.Add(getMinYandMaxY(theline, 0));
-                    linePointMinY = getMinYandMaxY2(theline, 0);
-                    linePointMaxY = getMinYandMaxY2(theline, 1);
-                    //Console.WriteLine("lineYmax[" + linecount + "]:" + lineYmax[linecount] + "            lineY[" + linecount + "]:" + lineYmin[linecount]);
-                    Console.WriteLine("lineYmax: " + linePointMaxY.Y + "            lineYmin: " + linePointMinY.Y);
-                    linecount++;
-                }
-                while (currentMinArea == originArea.Area);
-
-
-                //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
-                DrawPolyline2(this.m_axMapControl.ActiveView, theline as IGeometry); // 画出平行线
-                //Console.WriteLine("面积" + currentMinArea);
-
-               
-
-                // 当前误差-必须不断变小
-                double currentError = Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin);
-
-
-                double theLastMinArea = currentMinArea; // 获取上一次的最小面积（偏移平行线）
-                double theLastOffset = theOffsetBase;// 上一次的偏移
-
-                bool splitSuccessed = true;
-                double speed = 0.0;
-                    
-                 // 绝对值大于误差
-                while (currentError > Globle.CGlobalVarable.g_dMaxError)
-                {
-                    index++;
-                    // 合并最后2个多边形
-                    feature = this.m_pFrmMain.MergePolygonOfTTheLastTwoFeature();
-                    
-
-
-                    if (feature == null)
+                    //获取蓝框坐标
+                    IPoint p1 = new PointClass();
+                    IPoint p2 = new PointClass();
+                    IPoint p3 = new PointClass();
+                    IPoint p4 = new PointClass();
+                    if (pEnvelope != null && !pEnvelope.IsEmpty)
                     {
 
-                        this.m_pFrmMain.ShowTextInConsole("错误：无法继续分割，因为合并对变形失败！"); // 输出控制台显示
 
-                        return;
+                        if (pEnvelope == null)
+                            return;
+
+                        p1 = pEnvelope.UpperLeft;
+                        p2 = pEnvelope.LowerLeft;
+                        p3 = pEnvelope.LowerRight;
+                        p4 = pEnvelope.UpperRight;
+                        IPointCollection bluePointCollection = new PolygonClass();
+                        object missing = Type.Missing;
+                        bluePointCollection.AddPoint(p1, ref missing, ref missing);
+                        bluePointCollection.AddPoint(p2, ref missing, ref missing);
+                        bluePointCollection.AddPoint(p3, ref missing, ref missing);
+                        bluePointCollection.AddPoint(p4, ref missing, ref missing);
+                        //Console.WriteLine("蓝框左"+p1.X +"蓝框右"+ p4.X);
 
                     }
 
-                   
+                    //获取画好线（line）的坐标
+
+
+
+                    IMoveLineFeedback m_MoveLineFeedback = new MoveLineFeedbackClass();
+                    IPoint movedestination = linePointMinY;
+                    m_MoveLineFeedback = new MoveLineFeedbackClass();
+                    m_MoveLineFeedback.Start(line, linePointMinY);
+                    //movedestination.X = p1.X;
+                    //movedestination.Y = p1.Y + (linePointStart.Y - linePointMinY.Y) ;
+                    movedestination.Y = p1.Y;
+                    m_MoveLineFeedback.MoveTo(movedestination);
+                    line = (IPolyline)m_MoveLineFeedback.Stop();
+
+
+
+
+                    double startdifference = linePointStart.X - p1.X;
+                    double enddifference = linePointEnd.X - p4.X;
+                    //Console.WriteLine(startdifference + "---" + enddifference);
+
+                    #region 裁剪与延长
+                    theline = line;
+
+
+
+
+                    IEnvelope cutEnvelope = pEnvelope;
+                    //cutEnvelope.PutCoords(pEnvelope.XMin, pEnvelope.YMin, pEnvelope.XMax, pEnvelope.YMax);
+                    cutEnvelope.Expand(1, 5, true);
+                    ITopologicalOperator pTopoOperator = theline as ITopologicalOperator;
+                    pTopoOperator.Clip(cutEnvelope);
+
+
+                    if (startdifference > 0 && enddifference >= 0)
+                    {
+                        theline = GetExtendLine(theline, startdifference, 0);
+                    }
+                    if (startdifference > 0 && enddifference < 0)//左短右短
+                    {
+                        theline = GetExtendLine(line, startdifference, enddifference);
+                    }
+
+                    if (startdifference == 0 && enddifference < 0)//右短
+                    {
+                        theline = GetExtendLine(theline, 0, enddifference);
+                    }
+                    if (startdifference < 0 && enddifference < 0)//左长右短
+                    {
+                        theline = GetExtendLine(line, startdifference, enddifference);
+                    }
+                    #endregion
+
+                    //获取裁剪、延长后线（theline）坐标
+                    //IPointCollection thelinePointCollection = (IPointCollection)theline;
+                    //=============================
+                    IPointCollection thelinePointCollection = theline as IPointCollection;
+                    int thelinePointCount = thelinePointCollection.PointCount;
+                    IPoint thelinePointStart = thelinePointCollection.get_Point(0);//起点
+                    IPoint thelinePointEnd = thelinePointCollection.get_Point(thelinePointCount - 1);//终点
+                    //movedestination = thelinePointStart;
+                    Console.WriteLine(thelinePointStart.X + "~~起点~~~" + p1.X);
+                    Console.WriteLine(thelinePointEnd.X + "~~~终点~~" + p4.X);
+                    Console.WriteLine("~~~" + p1.Y);
+                    Console.WriteLine("~==~~" + p2.Y);
+
+
+                    linePointMinY = thelinePointStart;
+                    IPoint linePointMaxY = thelinePointStart;
+                    //得到theline的最高点与最低点
+                    for (int i = 0; i < thelinePointCount; i++)
+                    {
+
+                        if (linePointMinY.Y > thelinePointCollection.get_Point(i).Y)
+                            linePointMinY = thelinePointCollection.get_Point(i);
+                        if (linePointMaxY.Y < thelinePointCollection.get_Point(i).Y)
+                            linePointMaxY = thelinePointCollection.get_Point(i);
+                    }
+                    //===================================
+
+
+
+
+                    m_MoveLineFeedback.Start(theline, linePointMinY);
+                    movedestination.X = linePointMinY.X;
+                    //movedestination.Y = p1.Y - Globle.CGlobalVarable.g_dParallelLinesInterval;
+                    movedestination.Y = p1.Y;
+
+                    m_MoveLineFeedback.MoveTo(movedestination);
+                    theline = (IPolyline)m_MoveLineFeedback.Stop();
+                    DrawPolyline2(this.m_axMapControl.ActiveView, theline as IGeometry); // 画出平行线
+
+
+
+
+
+                    //IConstructCurve mycurve = new PolylineClass();
+
+                    //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
+
+                    //平行线的间隔 
+                    double bufferDis = Globle.CGlobalVarable.g_dParallelLinesInterval;
+                    ArrayList theOffsetBaseList = new ArrayList(); // 保存历史偏移的数据
+                    int index = 1;
+                    double theOffsetBase = bufferDis;// 偏移绝对值
+                    theOffsetBaseList.Add(theOffsetBase);// 保存每次的偏移绝对值
+
+                    //mycurve.ConstructOffset(theline, theOffsetBase);
+                    //object o = System.Type.Missing;
+
+                    //构造偏移点 https://wenku.baidu.com/view/25f170dc5022aaea998f0f44.html
+                    //mycurve.ConstructOffset(theline, theOffsetBase, ref o, ref o);
+
+                    theOffsetBaseList.Add(bufferDis * index);// 保存历史偏移的数据
+                    //DrawPolyline2(this.m_axMapControl.ActiveView, line as IGeometry);
 
 
                     // 分割1次多边形
                     this.m_pFrmMain.ShowTextInConsole(String.Format("第{0}次切割\r\n", index)); // 输出控制台显示
-                    Console.WriteLine("第{0}次切割\r\n", index);
-                    currentMinArea = SplitOnce(feature, theline);
-                    Console.WriteLine("第"+index+"切割完成，间隔" + theOffsetBase + "\r\n上一次面积" + theLastMinArea + "\r\n本次面积" + currentMinArea);
-                    //if (currentMinArea == originArea.Area)
-                    //{
-                    //    //currentMinArea = SplitOnce(feature, theline);
-                    //    // 切割前后最小面积的间隔（差）    
-                    //    Console.WriteLine("超过切割范围！");
-                    //    m_MoveLineFeedback.Start(theline, movedestination);
-                    //    //movedestination.X = thelinePointStart.X;
-                    //    movedestination.Y = movedestination.Y + 10;
-                    //    m_MoveLineFeedback.MoveTo(movedestination);
-                    //    theline = (IPolyline)m_MoveLineFeedback.Stop();
+                    double currentMinArea;
+                    //==============================李思琦 改动start=======================================   
+                    IArea originArea = feature.Shape as IArea;
 
-                    //}
-                    double areaInterval = Math.Abs(theLastMinArea - currentMinArea); // 切割前后最小面积的间隔（差）
-                    //==============================李思琦 改动start=======================================
-                    speed = (Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin - currentMinArea) / (currentMinArea - theLastMinArea);
-                    speed = Math.Round(speed, 2);
-                    Console.WriteLine("第"+index+"切割完成，速率" + speed);
-
-                    //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
-
-
-                    theLastMinArea = currentMinArea;// 获取上一次的最小面积（偏移平行线）
-                    // 判断当前误差是否超过最大控制误差
-                    if (currentError > Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin))
+                    movedestination = thelinePointStart;
+                    do
                     {
-                        currentError = Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin);// 当前误差
-                        this.m_pFrmMain.ShowTextInConsole(String.Format("当前误差为：{0},速率为{1}\r\n", currentError,speed)); // 输出控制台显示
+                        currentMinArea = SplitOnce(feature, theline);
+                        // 切割前后最小面积的间隔（差）    
+                        Console.WriteLine("第" + index + "切割完成，间隔" + theOffsetBase + "\r\n本次面积" + currentMinArea);
+                        m_MoveLineFeedback.Start(theline, movedestination);
+                        //movedestination.X = thelinePointStart.X;
+                        movedestination.Y = movedestination.Y - theOffsetBase;
+                        m_MoveLineFeedback.MoveTo(movedestination);
+                        theline = (IPolyline)m_MoveLineFeedback.Stop();
+                        //将线的最小值与最大值存入数组
+                        //lineYmax.Add(getMinYandMaxY(theline, 1));
+                        //lineYmin.Add(getMinYandMaxY(theline, 0));
+                        linePointMinY = getMinYandMaxY2(theline, 0);
+                        linePointMaxY = getMinYandMaxY2(theline, 1);
+                        //Console.WriteLine("lineYmax[" + linecount + "]:" + lineYmax[linecount] + "            lineY[" + linecount + "]:" + lineYmin[linecount]);
+                        Console.WriteLine("lineYmax: " + linePointMaxY.Y + "            lineYmin: " + linePointMinY.Y);
+                        linecount++;
                     }
-                 //==============================李思琦 改动start=======================================      
-                    //else
-                    //{
-
-                    //    this.m_pFrmMain.ShowTextInConsole(String.Format("误差扩大为：{0}；速率为{1},无法达到设置的最大控制误差{2}，请重新分割。\r\n", Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin),speed, Globle.CGlobalVarable.g_dMaxError)); // 输出控制台显示
-                    //    splitSuccessed = false;
-                    //    break; // 当前误差
-                    //}
+                    while (currentMinArea == originArea.Area);
 
 
-                    #region 智能化的移动平行线
-
-
-                    double offset = 0.0; // 偏移相对值
-                    if (speed >= 1) // 
-                    {
-
-                        offset = theLastOffset * Math.Ceiling(System.Math.Sqrt(speed));
-
-                    }
-                    else if (speed < 1 && speed > 0) // 
-                    {
-                        offset = (theLastOffset / Math.Ceiling(System.Math.Sqrt(1 / speed)));
-
-                    }
-                    else if (speed < 0 && speed > -1) // 
-                    {
-                        offset = (-1) * theLastOffset / Math.Ceiling(System.Math.Sqrt(1 / Math.Abs(speed)));
-
-                    }
-                    else if (speed <= -1) // 
-                    {
-                        offset = theLastOffset * (-1);
-
-                    }
-                    else // 正常
-                    {
-                        offset = theLastOffset;
-
-                    }
-                    if (Math.Abs(offset) > (p1.Y - p4.Y) / 2) 
-                    {
-                        offset = offset / 2;
-                    }
-                     #endregion 
-
-
-                    //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
-
-
-                    //this.m_pFrmMain.ShowTextInConsole(String.Format("currentError:{0};areaInterval:{1};offset：{2}\r\n",currentError,areaInterval,offset)); // 输出控制台显示
-                    offset = Math.Round(offset, 2);
-                    theOffsetBase += offset; // 偏移绝对值
-                    theLastOffset = offset; // 获取当前偏移
-                    theOffsetBaseList.Add(theOffsetBase);// 保存每次的偏移绝对值
-
-                    //==============================李思琦 改动start=======================================      
-                    // 移动一次平行线   
-                    m_MoveLineFeedback.Start(theline, movedestination);
-                    movedestination.Y = movedestination.Y - offset;
-                    m_MoveLineFeedback.MoveTo(movedestination);
-                    theline = m_MoveLineFeedback.Stop();
-                    //lineYmax.Add(getMinYandMaxY(theline, 1));
-                    //lineYmin.Add(getMinYandMaxY(theline, 0));
-                    linePointMinY = getMinYandMaxY2(theline, 0);
-                    linePointMaxY = getMinYandMaxY2(theline, 1);
-                    //Console.WriteLine("lineYmax[" + linecount + "]:" + lineYmax[linecount] + "            lineY[" + linecount + "]:" + lineYmin[linecount]);
-                    Console.WriteLine("lineYmax: " + linePointMaxY.Y + "            lineYmin: " + linePointMinY.Y);
-                    linecount++;
-                    Console.WriteLine("第" + index + "切割完成后，移动" + offset );
-                    //Console.WriteLine("线最大端的X" + linePointMaxY.X + "线最小端的X" + linePointMinY.X);
-
-
-
-                    //超出则回滚
-                    if (linePointMinY.Y < p2.Y)
-                    {
-                        Console.WriteLine("linePointMinY.Y" + linePointMinY.Y + " < p2.Y" + p2.Y);
-                        m_MoveLineFeedback.Start(theline, linePointMinY);
-                        linePointMinY.Y = p2.Y + 1;
-                        m_MoveLineFeedback.MoveTo(linePointMinY);
-                        theline = m_MoveLineFeedback.Stop();
-                        Console.WriteLine("可能超出边界，回滚到下界" + linePointMinY.Y);
-                    }
-                    else if (linePointMaxY.Y > p1.Y)
-                    {
-                        Console.WriteLine("linePointMaxY.Y" + linePointMaxY.Y + "> p1.Y" + p1.Y);
-                        m_MoveLineFeedback.Start(theline, linePointMaxY);
-                        linePointMaxY.Y = p1.Y - 1;
-                        m_MoveLineFeedback.MoveTo(linePointMaxY);
-                        theline = m_MoveLineFeedback.Stop();
-                        Console.WriteLine("可能超出边界，回滚到上界" + linePointMaxY.Y);
-                    }
-                    
                     //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
                     DrawPolyline2(this.m_axMapControl.ActiveView, theline as IGeometry); // 画出平行线
-                                
-                   
-                    System.Diagnostics.Debug.WriteLine(index.ToString());
+                    //Console.WriteLine("面积" + currentMinArea);
 
+
+
+                    // 当前误差-必须不断变小
+                    double currentError = Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin);
+
+
+                    double theLastMinArea = currentMinArea; // 获取上一次的最小面积（偏移平行线）
+                    double theLastOffset = theOffsetBase;// 上一次的偏移
+
+                    bool splitSuccessed = true;
+                    double speed = 0.0;
+
+                    // 绝对值大于误差
+                    while (currentError > Globle.CGlobalVarable.g_dMaxError)
+                    {
+                        index++;
+                        // 合并最后2个多边形
+                        feature = this.m_pFrmMain.MergePolygonOfTTheLastTwoFeature();
+
+
+
+                        if (feature == null)
+                        {
+
+                            this.m_pFrmMain.ShowTextInConsole("错误：无法继续分割，因为合并对变形失败！"); // 输出控制台显示
+
+                            return;
+
+                        }
+
+
+
+
+                        // 分割1次多边形
+                        this.m_pFrmMain.ShowTextInConsole(String.Format("第{0}次切割\r\n", index)); // 输出控制台显示
+                        Console.WriteLine("第{0}次切割\r\n", index);
+                        currentMinArea = SplitOnce(feature, theline);
+                        Console.WriteLine("第" + index + "切割完成，间隔" + theOffsetBase + "\r\n上一次面积" + theLastMinArea + "\r\n本次面积" + currentMinArea);
+                        //if (currentMinArea == originArea.Area)
+                        //{
+                        //    //currentMinArea = SplitOnce(feature, theline);
+                        //    // 切割前后最小面积的间隔（差）    
+                        //    Console.WriteLine("超过切割范围！");
+                        //    m_MoveLineFeedback.Start(theline, movedestination);
+                        //    //movedestination.X = thelinePointStart.X;
+                        //    movedestination.Y = movedestination.Y + 10;
+                        //    m_MoveLineFeedback.MoveTo(movedestination);
+                        //    theline = (IPolyline)m_MoveLineFeedback.Stop();
+
+                        //}
+                        double areaInterval = Math.Abs(theLastMinArea - currentMinArea); // 切割前后最小面积的间隔（差）
+                        //==============================李思琦 改动start=======================================
+                        speed = (Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin - currentMinArea) / (currentMinArea - theLastMinArea);
+                        speed = Math.Round(speed, 2);
+                        Console.WriteLine("第" + index + "切割完成，速率" + speed);
+
+                        //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
+
+
+                        theLastMinArea = currentMinArea;// 获取上一次的最小面积（偏移平行线）
+                        // 判断当前误差是否超过最大控制误差
+                        if (currentError > Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin))
+                        {
+                            currentError = Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin);// 当前误差
+                            this.m_pFrmMain.ShowTextInConsole(String.Format("当前误差为：{0},速率为{1}\r\n", currentError, speed)); // 输出控制台显示
+                        }
+                        //==============================李思琦 改动start=======================================      
+                        //else
+                        //{
+
+                        //    this.m_pFrmMain.ShowTextInConsole(String.Format("误差扩大为：{0}；速率为{1},无法达到设置的最大控制误差{2}，请重新分割。\r\n", Math.Abs(currentMinArea - Globle.CGlobalVarable.g_dSplittedPlogyonAreaMin),speed, Globle.CGlobalVarable.g_dMaxError)); // 输出控制台显示
+                        //    splitSuccessed = false;
+                        //    break; // 当前误差
+                        //}
+
+
+                        #region 智能化的移动平行线
+
+
+                        double offset = 0.0; // 偏移相对值
+                        if (speed >= 1) // 
+                        {
+
+                            offset = theLastOffset * Math.Ceiling(System.Math.Sqrt(speed));
+
+                        }
+                        else if (speed < 1 && speed > 0) // 
+                        {
+                            offset = (theLastOffset / Math.Ceiling(System.Math.Sqrt(1 / speed)));
+
+                        }
+                        else if (speed < 0 && speed > -1) // 
+                        {
+                            offset = (-1) * theLastOffset / Math.Ceiling(System.Math.Sqrt(1 / Math.Abs(speed)));
+
+                        }
+                        else if (speed <= -1) // 
+                        {
+                            offset = theLastOffset * (-1);
+
+                        }
+                        else // 正常
+                        {
+                            offset = theLastOffset;
+
+                        }
+                        if (Math.Abs(offset) > (p1.Y - p4.Y) / 2)
+                        {
+                            offset = offset / 2;
+                        }
+                        #endregion
+
+
+                        //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
+
+
+                        //this.m_pFrmMain.ShowTextInConsole(String.Format("currentError:{0};areaInterval:{1};offset：{2}\r\n",currentError,areaInterval,offset)); // 输出控制台显示
+                        offset = Math.Round(offset, 2);
+                        theOffsetBase += offset; // 偏移绝对值
+                        theLastOffset = offset; // 获取当前偏移
+                        theOffsetBaseList.Add(theOffsetBase);// 保存每次的偏移绝对值
+
+                        //==============================李思琦 改动start=======================================      
+                        // 移动一次平行线   
+                        m_MoveLineFeedback.Start(theline, movedestination);
+                        movedestination.Y = movedestination.Y - offset;
+                        m_MoveLineFeedback.MoveTo(movedestination);
+                        theline = m_MoveLineFeedback.Stop();
+                        //lineYmax.Add(getMinYandMaxY(theline, 1));
+                        //lineYmin.Add(getMinYandMaxY(theline, 0));
+                        linePointMinY = getMinYandMaxY2(theline, 0);
+                        linePointMaxY = getMinYandMaxY2(theline, 1);
+                        //Console.WriteLine("lineYmax[" + linecount + "]:" + lineYmax[linecount] + "            lineY[" + linecount + "]:" + lineYmin[linecount]);
+                        Console.WriteLine("lineYmax: " + linePointMaxY.Y + "            lineYmin: " + linePointMinY.Y);
+                        linecount++;
+                        Console.WriteLine("第" + index + "切割完成后，移动" + offset);
+                        //Console.WriteLine("线最大端的X" + linePointMaxY.X + "线最小端的X" + linePointMinY.X);
+
+
+
+                        //超出则回滚
+                        if (linePointMinY.Y < p2.Y)
+                        {
+                            Console.WriteLine("linePointMinY.Y" + linePointMinY.Y + " < p2.Y" + p2.Y);
+                            m_MoveLineFeedback.Start(theline, linePointMinY);
+                            linePointMinY.Y = p2.Y + 1;
+                            m_MoveLineFeedback.MoveTo(linePointMinY);
+                            theline = m_MoveLineFeedback.Stop();
+                            Console.WriteLine("可能超出边界，回滚到下界" + linePointMinY.Y);
+                        }
+                        else if (linePointMaxY.Y > p1.Y)
+                        {
+                            Console.WriteLine("linePointMaxY.Y" + linePointMaxY.Y + "> p1.Y" + p1.Y);
+                            m_MoveLineFeedback.Start(theline, linePointMaxY);
+                            linePointMaxY.Y = p1.Y - 1;
+                            m_MoveLineFeedback.MoveTo(linePointMaxY);
+                            theline = m_MoveLineFeedback.Stop();
+                            Console.WriteLine("可能超出边界，回滚到上界" + linePointMaxY.Y);
+                        }
+
+                        //++++++++++++++++++++++++++++++李思琦 改动end+++++++++++++++++++++++++++++++++++++++++
+                        DrawPolyline2(this.m_axMapControl.ActiveView, theline as IGeometry); // 画出平行线
+
+
+                        System.Diagnostics.Debug.WriteLine(index.ToString());
+
+                    }
+                    // 显示分割目标
+                    this.m_pFrmMain.ShowTextInConsole(String.Format("分割目标：{0}和{1}\r\n", Globle.CGlobalVarable.g_dSplittedPlogyonAreaFirst, Globle.CGlobalVarable.g_dSplittedPlogyonAreaSecond)); // 输出控制台显示
+
+
+                    // 显示实际分割结果
+                    double totalArea = Globle.CGlobalVarable.g_dSplittedPlogyonAreaFirst + Globle.CGlobalVarable.g_dSplittedPlogyonAreaSecond;
+                    this.m_pFrmMain.ShowTextInConsole(String.Format("实际分割后为：{0}和{1}\r\n", currentMinArea, totalArea - currentMinArea)); // 输出控制台显示
+
+
+
+
+
+
+
+
+
+
+                    if (splitSuccessed == true) // 分割成功
+                    {
+                        this.m_pFrmMain.ShowTextInConsole(String.Format("分割操作成功")); // 输出控制台显示
+                        //this.m_axMapControl.Map.ClearSelection();
+                        //this.m_axMapControl.ActiveView.PartialRefresh(esriViewDrawPhase.esriViewGeoSelection, null, null);
+
+                        pEnvelope.Expand(1, 0.2, true);
+                        this.m_axMapControl.ActiveView.Extent = pEnvelope;// 为了放大)
+                        AddRectangleElement(pEnvelope);
+
+                    }
+                    else
+                        this.m_pFrmMain.ShowTextInConsole(String.Format("分割操作失败")); // 输出控制台显示
+
+                    this.m_pFrmMain.ShowTextInConsole(String.Format("分割操作结束！\r\n")); // 输出控制台显示
+
+                    // 为最后2个Feature设置面积属性
+                    UpdateAreaFieldOfTheLastTwoFeature();
+
+
+                    //设置鼠标样式
+                    this.m_axMapControl.MousePointer = esriControlsMousePointer.esriPointerArrow;
+                    this.m_axMapControl.ActiveView.Refresh();
+
+                    sql = "featureID = " + spiltcount;
+                    pQueryFilter.WhereClause = sql;
+                    pFeatureCursor = fcls.Search(pQueryFilter, true);
+                    feature = pFeatureCursor.NextFeature();
+                    //feature = fcls.GetFeature(featurefid[featurecount]);
+
+                    if (feature == null)
+                        Console.WriteLine("下一个feature为空");
                 }
-                // 显示分割目标
-                this.m_pFrmMain.ShowTextInConsole(String.Format("分割目标：{0}和{1}\r\n", Globle.CGlobalVarable.g_dSplittedPlogyonAreaFirst, Globle.CGlobalVarable.g_dSplittedPlogyonAreaSecond)); // 输出控制台显示
+                #endregion
 
-
-                // 显示实际分割结果
-                double totalArea = Globle.CGlobalVarable.g_dSplittedPlogyonAreaFirst + Globle.CGlobalVarable.g_dSplittedPlogyonAreaSecond;
-                this.m_pFrmMain.ShowTextInConsole(String.Format("实际分割后为：{0}和{1}\r\n", currentMinArea, totalArea - currentMinArea)); // 输出控制台显示
-
-
-                
-
-
-
-
-
-
-
-                if (splitSuccessed == true) // 分割成功
-                {
-                    this.m_pFrmMain.ShowTextInConsole(String.Format("分割操作成功")); // 输出控制台显示
-                    //this.m_axMapControl.Map.ClearSelection();
-                    //this.m_axMapControl.ActiveView.PartialRefresh(esriViewDrawPhase.esriViewGeoSelection, null, null);
-
-                    pEnvelope.Expand(1, 0.2, true);
-                    this.m_axMapControl.ActiveView.Extent = pEnvelope;// 为了放大)
-                    AddRectangleElement(pEnvelope);
-                   
-                }
-                else
-                    this.m_pFrmMain.ShowTextInConsole(String.Format("分割操作失败")); // 输出控制台显示
-
-                this.m_pFrmMain.ShowTextInConsole(String.Format("分割操作结束！\r\n")); // 输出控制台显示
-
-                // 为最后2个Feature设置面积属性
-                UpdateAreaFieldOfTheLastTwoFeature();
-
-
-                //设置鼠标样式
-                this.m_axMapControl.MousePointer = esriControlsMousePointer.esriPointerArrow;
-
-
-                this.m_axMapControl.ActiveView.Refresh();
-               
             }
             else if(this.m_bShowStaticsGraph == true)
             {
